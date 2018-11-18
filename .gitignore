@@ -1,0 +1,48 @@
+#### Python
+*.py[co]
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+.eggs
+parts
+bin
+develop-eggs
+.installed.cfg
+.gitignore
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+
+#### Eclipse
+*.pydevproject
+.project
+.metadata
+
+
+#### Emacs
+\#*\#
+.#*
+*.swp
+flycheck-*
+flycheck_*
+.env
+
+#sphnix
+doc_build_dir
+tests/roei_playground/
+
+.cache
+.DS
+.DS_Store
+
+# unspecified
+filters.pkl
+
