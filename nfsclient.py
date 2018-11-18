@@ -7,6 +7,7 @@ from rpc import TCPClient
 NFS_PROGRAM = 100003
 NFS_VERSION = 3
 
+
 class NfsStat3(Enum):
     NFS3_OK = 0
     NFS3ERR_PERM = 1
@@ -32,6 +33,12 @@ class NfsStat3(Enum):
     NFS3ERR_BADHANDLE = 10001
 
 
+class CreateMode(Enum):
+    UNCHECKED = 0
+    GUARDED = 1
+    EXCLUSIVE = 2
+
+
 class UnexpectedNfsStatus(Exception):
     pass
 
@@ -46,26 +53,25 @@ class NFSPacker(MountPacker):
     def pack_sattr(self, sa):
         mode, uid, gid, size, atime, mtime = sa
         self.pack_uint(1)
-        self.pack_uint(mode)
-        self.pack_uint(uid)
-        self.pack_uint(gid)
+        self.pack_uint(sa["mode"])
+        self.pack_uint(sa["uid"])
+        self.pack_uint(sa["gid"])
         self.pack_uint(1)
-        self.pack_uhyper(size)
+        self.pack_uhyper(sa["size"])
         if atime == 0:
             self.pack_uint(0)
         else:
             self.pack_uint(1)
-            self.pack_timeval(atime)
+            self.pack_timeval(sa["atime"])
         if mtime == 0:
             self.pack_uint(0)
         else:
             self.pack_uint(1)
-            self.pack_timeval(mtime)
+            self.pack_timeval(sa["mtime"])
 
     def pack_diropargs(self, what):
-        dir_handle, file_name = what
-        self.pack_fhandle(dir_handle)
-        self.pack_string(file_name.encode())
+        self.pack_fhandle(what["dir"])
+        self.pack_string(what["Name"].encode())
 
 
     def pack_readdirargs(self, ra):
@@ -78,17 +84,17 @@ class NFSPacker(MountPacker):
            count3       maxcount;
       };
         """
-        dir, cookie, cookie_version, count = ra
-        self.pack_fhandle(dir)
-        self.pack_uhyper(cookie)
-        self._handle_cookie_ver(cookie_version)
-        self.pack_uint(count)
+        self.pack_fhandle(ra["dir"])
+        self.pack_uhyper(ra["cookie"])
+        self._handle_verifier(ra["Verifier"])
+        self.pack_uint(ra["count"])
 
-    def _handle_cookie_ver(self, cookie_version):
+    def _handle_verifier(self, cookie_version):
         if cookie_version == 0:
             self.pack_uhyper(cookie_version)
         else:
             self.pack_fopaque(8, cookie_version)
+
 
     def pack_readdirplus(self, ra):
         """
@@ -100,44 +106,20 @@ class NFSPacker(MountPacker):
            count3       maxcount;
           };
         """
-        _dir, cookie, cookieverf, dircount, maxcount = ra
-        ra_readdir = ra[:-1]
-        self.pack_readdirargs(ra_readdir)
-        self.pack_uint(maxcount)
+        self.pack_readdirargs(ra)
+        self.pack_uint(ra["maxcount"])
 
     def pack_write_args(self, wa):
-        fh, offset, count, stable, data = wa
-        self.pack_fhandle(fh)
-        self.pack_uhyper(offset)
-        self.pack_uint(count)
-        self.pack_uint(stable)
-        self.pack_data(data.encode())
+        self.pack_fhandle(wa["file"])
+        self.pack_uhyper(wa["offset"])
+        self.pack_uint(wa["count"])
+        self.pack_uint(wa["Stable"])
+        self.pack_data(wa["Data"].encode())
 
     def pack_create_args(self, ca):
-        """
-         struct CREATE3args {
-           diropargs3   where;
-           createhow3   how;
-
-        };
-        diropargs3
-
-          struct diropargs3 {
-             nfs_fh3     dir;
-             filename3   name;
-          };
-
-           enum createmode3 {
-           UNCHECKED = 0,
-           GUARDED   = 1,
-           EXCLUSIVE = 2
-      };
-
-        """
-        dir_handle, file_name, create_mode, mode, uid, gid, size, atime, mtime = ca
-        self.pack_diropargs((dir_handle, file_name))
-        self.pack_enum(create_mode)
-        self.pack_sattr((mode, uid, gid, size, atime, mtime))
+        self.pack_diropargs(ca['where'])
+        self.pack_enum(ca["Create Mode"])
+        self.pack_sattr(ca["obj_attributes"])
 
 
     def pack_commitargs(self, ca):
@@ -394,7 +376,6 @@ class NFSClient(TCPClient):
                               self.packer.pack_fs_info_args,
                               self.unpacker.unpack_fsinfo_res)
 
-
     def listdir_wrapper(self, dir_handle):
         list_dir = []
         ra = (dir_handle, 0, 0, 2000, 2000)
@@ -412,41 +393,6 @@ class NFSClient(TCPClient):
                 break
             ra = (ra[0], last_cookie, ra[1], ra[2])
         return list_dir
-
-    def readdir_wrapper(self, dir_handle):
-        list_dir = []
-        ra = (dir_handle, 0, 0, 2000)
-        while 1:
-            status, rest = self.read_dir(ra)
-            if status != NfsStat3.NFS3_OK:
-                print ("Server returned {}".format(status))
-                break
-            entries, eof = rest
-            last_cookie = None
-            for fileid, name, cookie in entries:
-                list_dir.append((fileid, name))
-                last_cookie = cookie
-            if eof or last_cookie is None:
-                break
-            ra = (ra[0], last_cookie, ra[2])
-        return list_dir
-
-    def lookup_wrapper(self, dir_handle, file_name):
-        what = dir_handle, file_name
-        status, fh = self.lookup(what)
-        if status == NfsStat3.NFS3_OK:
-            print ("file {} was found".format(file_name))
-            return fh
-        else:
-            print("file {} was not found".format(file_name))
-
-    def create_file_wrapper(self, dir_handle, file_name):
-        UNCHECKED = 0
-        create_args = dir_handle, file_name, UNCHECKED, 0, 0, 0, 0, 0, 0
-        status, fh = self.create(create_args)
-        if status == NfsStat3.NFS3_OK:
-            print("file {} was successfully created".format(file_name))
-        return fh
 
 
 def verify_nfs_status(status, allowed_statuses):

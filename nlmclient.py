@@ -1,16 +1,23 @@
 import rpc
 from rpc import TCPClient
 from nfsclient import NFSPacker, NFSUnpacker
-
+from enum import Enum
 
 NLM_VERSION = 4
 NLM_PROGRAM = 100021
 
-NLM4_GRANTED = 0
-NLM4_DENIED = 1
-NLM4_BLOCKED = 3
-NLM4_DENIED_GRACE_PERIOD = 4
-NLM4_DEADLCK = 5
+
+class NLM4_Stats(Enum):
+    NLM4_GRANTED = 0
+    NLM4_DENIED = 1
+    NLM4_DENIED_NOLOCKS = 2
+    NLM4_BLOCKED = 3
+    NLM4_DENIED_GRACE_PERIOD = 4
+    NLM4_DEADLCK = 5
+    NLM4_ROFS = 6
+    NLM4_STALE_FH = 7
+    NLM4_FBIG = 8
+    NLM4_FAILED = 9
 
 
 class NLMPacker(NFSPacker):
@@ -20,26 +27,29 @@ class NLMPacker(NFSPacker):
         self.pack_opaque(contents.encode())
 
     def pack_lock_attrs(self, lock_attrs):
-        caller_name, fh, owner, svid, l_offset, l_len = lock_attrs
-        self.pack_string(caller_name.encode())
-        self.pack_fhandle(fh)
-        self.pack_owner_data(owner)
-        self.pack_uint(svid)
-        self.pack_uint(l_offset)
-        self.pack_uhyper(l_len)
+        self.pack_string(lock_attrs["caller_name"].encode())
+        self.pack_fhandle(lock_attrs["fh"])
+        self.pack_owner_data(lock_attrs["owner"])
+        self.pack_uint(lock_attrs["svid"])
+        self.pack_uhyper(lock_attrs["l_offset"])
+        self.pack_uhyper(lock_attrs["l_len"])
 
     def pack_owner_data(self, owner):
         self.pack_uint(len(owner))
         self.pack_fopaque(len(owner), owner.encode())
 
-    def pack_lock_call(self, lock_data):
-        cookie, block, exclusive, lock, reclaim, state = lock_data
-        self.pack_cookie(cookie)
-        self.pack_bool(block)
-        self.pack_bool(exclusive)
-        self.pack_lock_attrs(lock)
-        self.pack_bool(reclaim)
-        self.pack_uhyper(state)
+    def pack_lock_call(self, data):
+        self.pack_cookie(data["cookie"])
+        self.pack_bool(data["block"])
+        self.pack_bool(data["exclusive"])
+        self.pack_lock_attrs(data["lock"])
+        self.pack_bool(data["reclaim"])
+        self.pack_uhyper(data["state"])
+
+    def pack_unlock_call(self, data):
+        self.pack_cookie(data["cookie"])
+        self.pack_lock_attrs(data["lock"])
+
 
 
 class NLMUnpacker(NFSUnpacker):
@@ -50,8 +60,7 @@ class NLMUnpacker(NFSUnpacker):
         self.unpack_uint()
         self.unpack_string()
 
-
-    def unpack_lock_reply(self):
+    def unpack_lock_unlock_reply(self):
         self.unpack_cookie()
         return self.unpack_enum()
 
@@ -72,27 +81,12 @@ class NLMClient(TCPClient):
     def lock(self, data):
         return self.make_call(2, data,
                               self.packer.pack_lock_call,
-                              self.unpacker.unpack_lock_reply)
+                              self.unpacker.unpack_lock_unlock_reply)
 
-    def lock_wrapper(self, fh, owner, exclusive, block):
-        cookie = (4, '')
-        caller_name = 'kernel2222'
-        owner = owner
-        svid = 4
-        l_offset = 0
-        l_len = 0
-        lock = (caller_name, fh, owner, svid, l_offset, l_len)
-        reclaim = False
-        state = 3
-        data = (cookie, block, exclusive, lock, reclaim, state)
-        status = self.lock(data)
-        print(status)
-        if status == NLM4_GRANTED:
-            print("NLM_GRANTED")
-        elif status == NLM4_BLOCKED:
-            print("NLM_BLOCKED")
-        elif status == NLM4_DENIED:
-            print("NLM4_DENIED")
 
+    def unlock(self, data):
+        return self.make_call(4, data,
+                              self.packer.pack_unlock_call,
+                              self.unpacker.unpack_lock_unlock_reply)
 
 
