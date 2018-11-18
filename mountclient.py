@@ -3,13 +3,12 @@
 # This module demonstrates how to write your own RPC client in Python.
 # When this example was written, there was no RPC compiler for
 # Python. Without such a compiler, you must first create classes
-# derived from Packer and Unpacker to handle the data types for the
-# server you want to interface to.  You then write the client class.
-# If you want to support both the TCP and the UDP version of a
-# protocol, use multiple inheritance as shown below.
-
-
+# # derived from Packer and Unpacker to handle the data types for the
+# # server you want to interface to.  You then write the client class.
+# # If you want to support both the TCP and the UDP version of a
+# # protocol, use multiple inheritance as shown below.
 import rpc
+import os
 from rpc import Packer, Unpacker, TCPClient, UDPClient
 
 
@@ -93,7 +92,6 @@ class PartialMountClient:
     # default network interface, but if we're running as root,
     # we want to bind to a reserved port
     def bindsocket(self):
-        import os
         try:
             uid = os.getuid()
         except AttributeError:
@@ -108,7 +106,7 @@ class PartialMountClient:
     # authentication object for a call to procedure 'proc'.
     def mkcred(self):
         if self.cred is None:
-            self.cred = rpc.AuthFlavor.AUTH_UNIX, rpc.make_auth_unix_default()
+            self.cred = rpc.AuthFlavor.AUTH_UNIX.value, rpc.make_auth_unix_default()
         return self.cred
 
     # The methods Mnt, Dump etc. each implement one Remote
@@ -147,19 +145,16 @@ class PartialMountClient:
                               self.unpacker.unpack_fhstatus)
 
     def dump(self):
-        return self.make_call(2, None, \
-                None, self.unpacker.unpack_mountlist)
+        return self.make_call(2, None, None, self.unpacker.unpack_mountlist)
 
     def umount(self, directory):
-        return self.make_call(3, directory.encode(), \
-                self.packer.pack_string, None)
+        return self.make_call(3, directory.encode(), self.packer.pack_string, None)
 
-    def Umntall(self):
+    def umntall(self):
         return self.make_call(4, None, None, None)
 
-    def Export(self):
-        return self.make_call(5, None, \
-                None, self.unpacker.unpack_exportlist)
+    def export(self):
+        return self.make_call(5, None, None, self.unpacker.unpack_exportlist)
 
 
 # We turn the partial Mount client into a full one for either protocol

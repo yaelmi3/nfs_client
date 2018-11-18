@@ -12,6 +12,7 @@ NLM4_BLOCKED = 3
 NLM4_DENIED_GRACE_PERIOD = 4
 NLM4_DEADLCK = 5
 
+
 class NLMPacker(NFSPacker):
     def pack_cookie(self, cookie):
         length, contents = cookie
@@ -65,7 +66,7 @@ class NLMClient(TCPClient):
 
     def mkcred(self):
         if self.cred is None:
-            self.cred = rpc.AUTH_UNIX, rpc.make_auth_unix_default()
+            self.cred = rpc.AuthFlavor.AUTH_UNIX.value, rpc.make_auth_unix_default()
         return self.cred
 
     def lock(self, data):

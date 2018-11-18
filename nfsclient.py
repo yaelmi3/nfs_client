@@ -1,10 +1,4 @@
-# NFS RPC client -- RFC 1094
-
-# XXX This is not yet complete.
-# XXX Only GETATTR, SETTTR, LOOKUP and READDIR are supported.
-
-# (See mountclient.py for some hints on how to write RPC clients in
-# Python in general)
+from enum import Enum
 
 import rpc
 from mountclient import MountPacker, MountUnpacker
@@ -13,19 +7,33 @@ from rpc import TCPClient
 NFS_PROGRAM = 100003
 NFS_VERSION = 3
 
-# enum stat
-NFS_OK = 0
-# (...many error values...)
-NFS3ERR_NOENT = 2
+class NfsStat3(Enum):
+    NFS3_OK = 0
+    NFS3ERR_PERM = 1
+    NFS3ERR_NOENT = 2
+    NFS3ERR_IO = 5
+    NFS3ERR_NXIO = 6
+    NFS3ERR_ACCES = 13
+    NFS3ERR_EXIST = 17
+    NFS3ERR_XDEV = 18
+    NFS3ERR_NODEV = 19
+    NFS3ERR_NOTDIR = 20
+    NFS3ERR_ISDIR = 21
+    NFS3ERR_INVAL = 22
+    NFS3ERR_FBIG = 27
+    NFS3ERR_NOSPC = 28
+    NFS3ERR_ROFS = 30
+    NFS3ERR_MLINK = 31
+    NFS3ERR_NAMETOOLONG = 63
+    NFS3ERR_NOTEMPTY = 66
+    NFS3ERR_DQUOT = 69
+    NFS3ERR_STALE = 70
+    NFS3ERR_REMOTE = 71
+    NFS3ERR_BADHANDLE = 10001
 
-# enum ftype
-NFNON = 0
-NFREG = 1
-NFDIR = 2
-NFBLK = 3
-NFCHR = 4
-NFLNK = 5
 
+class UnexpectedNfsStatus(Exception):
+    pass
 
 
 class NFSPacker(MountPacker):
@@ -48,7 +56,7 @@ class NFSPacker(MountPacker):
         else:
             self.pack_uint(1)
             self.pack_timeval(atime)
-        if (mtime == 0):
+        if mtime == 0:
             self.pack_uint(0)
         else:
             self.pack_uint(1)
@@ -155,36 +163,34 @@ class NFSPacker(MountPacker):
 class NFSUnpacker(MountUnpacker):
 
     def unpack_readdirres(self):
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            self.unpack_obj_attributes()
-            _ = self.unpack_uhyper()
-            entries = self.unpack_list(self.unpack_entry)
-            eof = self.unpack_bool()
-            rest = (entries, eof)
-            return status, rest
+        status = verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK])
+        self.unpack_obj_attributes()
+        _ = self.unpack_uhyper()
+        entries = self.unpack_list(self.unpack_entry)
+        eof = self.unpack_bool()
+        rest = (entries, eof)
+        return status, rest
 
     def unpack_readdirplus(self):
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            attr = self.unpack_obj_attributes()
-            _ = self.unpack_uhyper()
-            entries = self.unpack_list(self.unpack_entry_plus)
-            eof = self.unpack_bool()
-            rest = (entries, eof)
-            return status, attr, rest
+        status = verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK])
+        attr = self.unpack_obj_attributes()
+        self.unpack_uhyper() # Verifier
+        entries = self.unpack_list(self.unpack_entry_plus)
+        eof = self.unpack_bool()
+        rest = (entries, eof)
+        return status, attr, rest
 
     def unpack_obj_attributes(self):
-        attributes_follows = self.unpack_uint()
-        if attributes_follows == 1:
+        attributes_follow = self.unpack_bool()
+        if attributes_follow == 1:
             fattr3 = self.unpack_fattr3()
             return fattr3
 
     def unpack_dir_or_file_wcc(self):
-        before_follows = self.unpack_uint()
+        before_follows = self.unpack_bool()
         if before_follows:
             self.unpack_wcc_attr()
-        after_follows = self.unpack_uint()
+        after_follows = self.unpack_bool()
         if after_follows:
             self.unpack_fattr3()
 
@@ -214,22 +220,20 @@ class NFSUnpacker(MountUnpacker):
            uint32       properties;
         :return:
         """
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            attr = self.unpack_obj_attributes()
-            rtmax = self.unpack_uint()
-            rtpref = self.unpack_uint()
-            rtmult= self.unpack_uint()
-            wtmax = self.unpack_uint()
-            wtpref = self.unpack_uint()
-            wtmult = self.unpack_uint()
-            dtpref = self.unpack_uint()
-            time_delta = self.unpack_uhyper()
-            properties = self.unpack_uint()
-            max_file_size = self.unpack_uhyper()
-
-            return attr, rtmax, rtpref, rtmult, wtmax, wtpref, wtmult, dtpref, time_delta,\
-                   properties, max_file_size
+        verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK])
+        attr = self.unpack_obj_attributes()
+        rtmax = self.unpack_uint()
+        rtpref = self.unpack_uint()
+        rtmult= self.unpack_uint()
+        wtmax = self.unpack_uint()
+        wtpref = self.unpack_uint()
+        wtmult = self.unpack_uint()
+        dtpref = self.unpack_uint()
+        time_delta = self.unpack_uhyper()
+        properties = self.unpack_uint()
+        max_file_size = self.unpack_uhyper()
+        return attr, rtmax, rtpref, rtmult, wtmax, wtpref, wtmult, dtpref, time_delta, \
+               properties, max_file_size
 
     def unpack_entry(self):
         file_id = self.unpack_uhyper()
@@ -238,57 +242,50 @@ class NFSUnpacker(MountUnpacker):
         return file_id, name, cookie
 
     def unpack_entry_plus(self):
+        fh = None
         fileid, name, cookie = self.unpack_entry()
         entry_attr = self.unpack_obj_attributes()
-        fh = self.unpack_fh_attributes()
-        return (fileid, name, cookie, entry_attr, fh)
+        handle_follow = self.unpack_bool()
+        if handle_follow:
+            fh = self.unpack_fh_attributes()
+        return fileid, name, cookie, entry_attr, fh
 
     def unpack_write_res(self):
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            self.unpack_dir_or_file_wcc()
-            # count
-            self.unpack_uint()
-            # committed
-            self.unpack_uint()
-            # committed:
-            self.unpack_uhyper()
+        status = verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK])
+        self.unpack_dir_or_file_wcc()
+        # count
+        self.unpack_uint()
+        # committed
+        self.unpack_uint()
+        # committed:
+        self.unpack_uhyper()
         return status
 
     def unpack_create_res(self):
         fh = None
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            handle_follow = self.unpack_uint()
-            if handle_follow == 1:
-                fh = self.unpack_fh_attributes()
-            self.unpack_obj_attributes()
-            self.unpack_dir_or_file_wcc()
+        status = verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK])
+        handle_follow = self.unpack_bool()
+        if handle_follow:
+            fh = self.unpack_fh_attributes()
+        self.unpack_obj_attributes()
+        self.unpack_dir_or_file_wcc()
         return status, fh
 
-    def unpack_commit_res(self):
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            pass
-        return
 
     def unpack_dirop_res(self):
         file_handle = None
-        status = self.unpack_enum()
-        if status == NFS_OK:
+        status = verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK, NfsStat3.NFS3ERR_NOENT])
+        if status == NfsStat3.NFS3_OK:
             file_handle = self.unpack_fhandle()
             self.unpack_obj_attributes()
             self.unpack_obj_attributes()
-        elif status == NFS3ERR_NOENT:
+        elif status == NfsStat3.NFS3ERR_NOENT:
             self.unpack_obj_attributes()
         return status, file_handle
 
     def unpack_attribute_status(self):
-        status = self.unpack_enum()
-        if status == NFS_OK:
-            attributes = self.unpack_fattr3()
-        else:
-            attributes = None
+        status = verify_nfs_status(self.unpack_enum(), [NfsStat3.NFS3_OK])
+        attributes = self.unpack_fattr3()
         return status, attributes
 
     def unpack_fattr3(self):
@@ -354,7 +351,7 @@ class NFSClient(TCPClient):
 
     def mkcred(self):
         if self.cred is None:
-            self.cred = rpc.AUTH_UNIX, rpc.make_auth_unix_default()
+            self.cred = rpc.AuthFlavor.AUTH_UNIX.value, rpc.make_auth_unix_default()
         return self.cred
 
     def getattr(self, fh):
@@ -387,11 +384,6 @@ class NFSClient(TCPClient):
                               self.packer.pack_write_args,
                               self.unpacker.unpack_write_res)
 
-    def commit(self, wa):
-        return self.make_call(21, wa,
-                              self.packer.pack_commitargs,
-                              self.unpacker.unpack_commit_res)
-
     def create(self, ca):
         return self.make_call(8, ca,
                               self.packer.pack_create_args,
@@ -402,12 +394,13 @@ class NFSClient(TCPClient):
                               self.packer.pack_fs_info_args,
                               self.unpacker.unpack_fsinfo_res)
 
-    def listdir_wrapper(self, dir):
+
+    def listdir_wrapper(self, dir_handle):
         list_dir = []
-        ra = (dir, 0, 0, 2000, 2000)
+        ra = (dir_handle, 0, 0, 2000, 2000)
         while 1:
             status, dir_params, rest = self.read_dir_plus(ra)
-            if status != NFS_OK:
+            if status != NfsStat3.NFS3_OK:
                 print ("Server returned {}".format(status))
                 break
             entries, eof = rest
@@ -420,13 +413,12 @@ class NFSClient(TCPClient):
             ra = (ra[0], last_cookie, ra[1], ra[2])
         return list_dir
 
-
-    def readdir_wrapper(self, dir):
+    def readdir_wrapper(self, dir_handle):
         list_dir = []
-        ra = (dir, 0, 0, 2000)
+        ra = (dir_handle, 0, 0, 2000)
         while 1:
             status, rest = self.read_dir(ra)
-            if status != NFS_OK:
+            if status != NfsStat3.NFS3_OK:
                 print ("Server returned {}".format(status))
                 break
             entries, eof = rest
@@ -442,18 +434,18 @@ class NFSClient(TCPClient):
     def lookup_wrapper(self, dir_handle, file_name):
         what = dir_handle, file_name
         status, fh = self.lookup(what)
-        if status == NFS_OK:
+        if status == NfsStat3.NFS3_OK:
             print ("file {} was found".format(file_name))
             return fh
         else:
-            print ("file {} was not found".format(file_name))
+            print("file {} was not found".format(file_name))
 
     def create_file_wrapper(self, dir_handle, file_name):
         UNCHECKED = 0
         create_args = dir_handle, file_name, UNCHECKED, 0, 0, 0, 0, 0, 0
         status, fh = self.create(create_args)
-        if status == 0:
-            print ("file {} was successfully created".format(file_name))
+        if status == NfsStat3.NFS3_OK:
+            print("file {} was successfully created".format(file_name))
         return fh
 
     def write_to_file_wrapper(self, file_handle, data, offset):
@@ -462,3 +454,12 @@ class NFSClient(TCPClient):
         return file_handle
 
 
+def verify_nfs_status(status, allowed_statuses):
+    """
+    Check if the current matches the given allowed status. Raise an exception otherwise
+    :type status: int
+    :type allowed_statuses: list
+    """
+    if NfsStat3(status) not in allowed_statuses:
+        raise UnexpectedNfsStatus(f"{NfsStat3(status).name} ({NfsStat3(status).value})")
+    return NfsStat3(status)

@@ -2,8 +2,13 @@ from mountclient import TCPMountClient
 from nfsclient import NFSClient
 from nlmclient import NLMClient
 
-HOST = '172.16.41.76'
-FILE_SYSTEM = "/export_632983b86c614beba64e52f8df03bb43"
+# HOST = '172.16.41.76'
+# FILE_SYSTEM = "/export_632983b86c614beba64e52f8df03bb43"
+
+HOST = '172.16.76.173'
+FILE_SYSTEM = "/export/users"
+
+
 mount_client = TCPMountClient(HOST)
 nfs_client = NFSClient(host=HOST)
 nlm_client = NLMClient(host=HOST)
@@ -36,13 +41,13 @@ def create_file(file_system=FILE_SYSTEM, file_name="new_file.txt"):
 def read_dirs():
     dir_handle = _get_dir_handle()
     for item in nfs_client.readdir_wrapper(dir_handle):
-        print (item)
+        print(item)
 
 
 def list_dir(host=HOST, filesys=FILE_SYSTEM):
     mount_client = TCPMountClient(host)
     if filesys is None:
-        export_list = mount_client.Export()
+        export_list = mount_client.export()
         for item in export_list:
             print(item)
     else:
@@ -57,5 +62,10 @@ def lock_file(file_system=FILE_SYSTEM, file_name="stam.txt", owner="yael", exclu
     nlm_client.lock_wrapper(file_handle, owner=owner, exclusive=exclusive, block=block)
 
 
-
-
+def test_all():
+    write_to_file()
+    create_file()
+    lookup_file()
+    read_dirs()
+    list_dir()
+    lock_file()
