@@ -448,11 +448,6 @@ class NFSClient(TCPClient):
             print("file {} was successfully created".format(file_name))
         return fh
 
-    def write_to_file_wrapper(self, file_handle, data, offset):
-        FILE_SYNC = 2
-        self.write((file_handle, offset, len(data), FILE_SYNC, data))
-        return file_handle
-
 
 def verify_nfs_status(status, allowed_statuses):
     """
