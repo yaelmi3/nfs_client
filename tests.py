@@ -44,17 +44,18 @@ def list_dir(host=HOST, filesys=FILE_SYSTEM):
     if filesys is None:
         export_list = mount_client.Export()
         for item in export_list:
-            print (item)
+            print(item)
     else:
         dir_handle = _get_dir_handle()
         dir_list = nfs_client.listdir_wrapper(dir_handle)
         for item in dir_list:
-            print (item)
+            print(item)
 
 
 def lock_file(file_system=FILE_SYSTEM, file_name="stam.txt", owner="yael", exclusive=True, block=False):
     file_handle = write_to_file(file_system, file_name)
     nlm_client.lock_wrapper(file_handle, owner=owner, exclusive=exclusive, block=block)
+
 
 
 

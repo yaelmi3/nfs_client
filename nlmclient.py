@@ -9,6 +9,8 @@ NLM_PROGRAM = 100021
 NLM4_GRANTED = 0
 NLM4_DENIED = 1
 NLM4_BLOCKED = 3
+NLM4_DENIED_GRACE_PERIOD = 4
+NLM4_DEADLCK = 5
 
 class NLMPacker(NFSPacker):
     def pack_cookie(self, cookie):
@@ -83,6 +85,7 @@ class NLMClient(TCPClient):
         state = 3
         data = (cookie, block, exclusive, lock, reclaim, state)
         status = self.lock(data)
+        print(status)
         if status == NLM4_GRANTED:
             print("NLM_GRANTED")
         elif status == NLM4_BLOCKED:

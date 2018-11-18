@@ -108,7 +108,7 @@ class PartialMountClient:
     # authentication object for a call to procedure 'proc'.
     def mkcred(self):
         if self.cred is None:
-            self.cred = rpc.AUTH_UNIX, rpc.make_auth_unix_default()
+            self.cred = rpc.AuthFlavor.AUTH_UNIX, rpc.make_auth_unix_default()
         return self.cred
 
     # The methods Mnt, Dump etc. each implement one Remote
