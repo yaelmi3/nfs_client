@@ -7,9 +7,11 @@ from nlmclient import NLMClient, NLM4_Stats
 from packer_arguments import get_packer_arguments
 
 
+class FileNotFound(Exception):
+    pass
+
 class NFSClientWrapper(rpyc.Service):
     FILE_SYNC = 2
-
 
     def _get_export_handle(self, host, export):
         mount_client = TCPMountClient(host)
@@ -90,6 +92,8 @@ class NFSClientWrapper(rpyc.Service):
         l_len = kwargs.get("length", 0)
         nlm_client = NLMClient(host)
         file_handle = self._get_file_handle(host, export, file_name)
+        if not file_handle:
+            raise FileNotFound(f"{file_name} cannot be found")
         lock_arguments = get_packer_arguments("LOCK",
                                               caller_name=client_name,
                                               block=block,
@@ -99,7 +103,7 @@ class NFSClientWrapper(rpyc.Service):
                                               l_offset=offset,
                                               l_len=l_len)
         status = nlm_client.lock(lock_arguments)
-        return NLM4_Stats(status)
+        return NLM4_Stats(status).name
 
     def exposed_unlock(self, host, export, file_name, owner, client_name, offset=0, l_len=0):
         file_handle = self._get_file_handle(host, export, file_name)
@@ -111,7 +115,7 @@ class NFSClientWrapper(rpyc.Service):
                                                 l_offset=offset,
                                                 l_len=l_len)
         status = nlm_client.unlock(unlock_arguments)
-        return NLM4_Stats(status)
+        return NLM4_Stats(status).name
 
     def _get_file_handle(self, host, export, file_name):
         file_handle = self.exposed_lookup_file(host, export, file_name)
