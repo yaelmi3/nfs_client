@@ -6,7 +6,6 @@ from enum import Enum
 NLM_VERSION = 4
 NLM_PROGRAM = 100021
 
-
 class NLM4_Stats(Enum):
     NLM4_GRANTED = 0
     NLM4_DENIED = 1

@@ -1,4 +1,6 @@
 import rpyc
+import sys
+from logbook import Logger, StreamHandler
 from rpyc.utils.server import ThreadedServer
 
 from mountclient import TCPMountClient
@@ -6,12 +8,18 @@ from nfsclient import NFSClient, NfsStat3, CreateMode, UnexpectedNfsStatus
 from nlmclient import NLMClient, NLM4_Stats
 from packer_arguments import get_packer_arguments
 
+logger = Logger("nfs_client")
+
 
 class FileNotFound(Exception):
     pass
 
+
 class NFSClientWrapper(rpyc.Service):
     FILE_SYNC = 2
+
+    def on_connect(self, *args):
+        logger.info(f"Remote connection accepted")
 
     def _get_export_handle(self, host, export):
         mount_client = TCPMountClient(host)
@@ -34,7 +42,8 @@ class NFSClientWrapper(rpyc.Service):
         nfs_client.write(write_arguments)
         return file_handle
 
-    def exposed_lookup_file(self, host, export, file_name="new_file.txt"):
+    def exposed_lookup_file(self, host, export, file_name):
+        logger.debug(f"Lookup for file {file_name} on export {export}, host {host}")
         nfs_client = NFSClient(host=host)
         lookup_args = get_packer_arguments("LOOKUP", dir=self._get_export_handle(host, export), name=file_name)
         status, fh = nfs_client.lookup(lookup_args['what'])
@@ -52,7 +61,7 @@ class NFSClientWrapper(rpyc.Service):
                                            create_mode=CreateMode.UNCHECKED.value)
         status, fh = nfs_client.create(create_args)
         if status == NfsStat3.NFS3_OK:
-            print("file {} was successfully created".format(file_name))
+            logger.debug("file {} was successfully created".format(file_name))
         return fh
 
     def read_dirs(self, host, export):
@@ -90,6 +99,7 @@ class NFSClientWrapper(rpyc.Service):
         block = kwargs.get("block", False)
         offset = kwargs.get("offset", 0)
         l_len = kwargs.get("length", 0)
+        logger.debug(f"Locking the file {file_name} on host {host}")
         nlm_client = NLMClient(host)
         file_handle = self._get_file_handle(host, export, file_name)
         if not file_handle:
@@ -123,6 +133,8 @@ class NFSClientWrapper(rpyc.Service):
 
 
 if __name__ == "__main__":
+    StreamHandler(sys.stdout).push_application()
     t = ThreadedServer(NFSClientWrapper, port=9999)
     t.daemon = True
+    logger.notice("Starting server on port 9999")
     t.start()
