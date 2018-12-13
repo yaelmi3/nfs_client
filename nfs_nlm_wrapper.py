@@ -1,5 +1,6 @@
-import rpyc
 import sys
+
+import rpyc
 from logbook import Logger, StreamHandler
 from rpyc.utils.server import ThreadedServer
 
@@ -48,9 +49,9 @@ class NFSClientWrapper(rpyc.Service):
         lookup_args = get_packer_arguments("LOOKUP", dir=self._get_export_handle(host, export), name=file_name)
         status, fh = nfs_client.lookup(lookup_args['what'])
         if status == NfsStat3.NFS3_OK:
-            print ("file {} was found".format(file_name))
+            logger.debug("file {} was found".format(file_name))
         else:
-            print("file {} was not found".format(file_name))
+            logger.debug("file {} was not found".format(file_name))
         return fh
 
     def exposed_create_file(self, host, export, file_name):
@@ -99,11 +100,12 @@ class NFSClientWrapper(rpyc.Service):
         block = kwargs.get("block", False)
         offset = kwargs.get("offset", 0)
         l_len = kwargs.get("length", 0)
-        logger.debug(f"Locking the file {file_name} on host {host}")
+        file_handle = kwargs.get("file_handle")
+        logger.debug(
+            f"Locking the file {file_name} on host {host}, owner={owner}, client={client_name}")
         nlm_client = NLMClient(host)
-        file_handle = self._get_file_handle(host, export, file_name)
-        if not file_handle:
-            raise FileNotFound(f"{file_name} cannot be found")
+        file_handle = self._get_file_handle(host, export,
+                                            file_name) if not file_handle else file_handle
         lock_arguments = get_packer_arguments("LOCK",
                                               caller_name=client_name,
                                               block=block,
@@ -115,8 +117,14 @@ class NFSClientWrapper(rpyc.Service):
         status = nlm_client.lock(lock_arguments)
         return NLM4_Stats(status).name
 
-    def exposed_unlock(self, host, export, file_name, owner, client_name, offset=0, l_len=0):
-        file_handle = self._get_file_handle(host, export, file_name)
+    def exposed_unlock(self, host, export, file_name, owner, client_name, **kwargs):
+        offset = kwargs.get("offset", 0)
+        l_len = kwargs.get("length", 0)
+        file_handle = kwargs.get("file_handle")
+        logger.debug(
+            f"Unlocking the file {file_name} on host {host}, owner={owner}, client={client_name}")
+        file_handle = self._get_file_handle(host, export,
+                                            file_name) if not file_handle else file_handle
         nlm_client = NLMClient(host)
         unlock_arguments = get_packer_arguments("UNLOCK",
                                                 caller_name=client_name,
@@ -129,6 +137,8 @@ class NFSClientWrapper(rpyc.Service):
 
     def _get_file_handle(self, host, export, file_name):
         file_handle = self.exposed_lookup_file(host, export, file_name)
+        if not file_handle:
+            raise FileNotFound(f"{file_name} cannot be found and file_handle was not specified")
         return file_handle
 
 
