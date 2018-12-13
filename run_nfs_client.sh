@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+source env/bin/activate
+python nfs_nlm_wrapper.py&

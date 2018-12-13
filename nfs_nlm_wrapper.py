@@ -1,7 +1,7 @@
 import sys
 
 import rpyc
-from logbook import Logger, StreamHandler
+from logbook import Logger, FileHandler
 from rpyc.utils.server import ThreadedServer
 
 from mountclient import TCPMountClient
@@ -143,7 +143,7 @@ class NFSClientWrapper(rpyc.Service):
 
 
 if __name__ == "__main__":
-    StreamHandler(sys.stdout).push_application()
+    FileHandler("nfs_client.log").push_application()
     t = ThreadedServer(NFSClientWrapper, port=9999)
     t.daemon = True
     logger.notice("Starting server on port 9999")
