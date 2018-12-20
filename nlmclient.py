@@ -59,7 +59,7 @@ class NLMUnpacker(NFSUnpacker):
 
     def unpack_cookie(self):
         self.unpack_uint()
-        self.unpack_string()
+        self.unpack_opaque()
 
     def unpack_lock_unlock_reply(self):
         self.unpack_cookie()
