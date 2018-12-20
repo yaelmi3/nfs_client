@@ -58,8 +58,9 @@ class NLMUnpacker(NFSUnpacker):
         NFSUnpacker.__init__(self, '')
 
     def unpack_cookie(self):
-        self.unpack_uint()
-        self.unpack_opaque()
+        cookie_len = self.unpack_uint()
+        if cookie_len > 0:
+            self.unpack_opaque()
 
     def unpack_lock_unlock_reply(self):
         self.unpack_cookie()
