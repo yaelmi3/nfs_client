@@ -102,7 +102,8 @@ class NFSClientWrapper(rpyc.Service):
         l_len = kwargs.get("length", 0)
         file_handle = kwargs.get("file_handle")
         logger.debug(
-            f"Locking the file {file_name} on host {host}, owner={owner}, client={client_name}")
+            f"Locking the file {file_name} on host {host}, owner={owner}, client={client_name},"
+            f" kwargs={kwargs}")
         nlm_client = NLMClient(host)
         file_handle = self._get_file_handle(host, export,
                                             file_name) if not file_handle else file_handle
@@ -119,10 +120,11 @@ class NFSClientWrapper(rpyc.Service):
 
     def exposed_unlock(self, host, export, file_name, owner, client_name, **kwargs):
         offset = kwargs.get("offset", 0)
-        l_len = kwargs.get("length", 0)
+        length = kwargs.get("length", 0)
         file_handle = kwargs.get("file_handle")
         logger.debug(
-            f"Unlocking the file {file_name} on host {host}, owner={owner}, client={client_name}")
+            f"Unlocking the file {file_name} on host {host}, owner={owner}, client={client_name},"
+            f" kwargs = {kwargs}")
         file_handle = self._get_file_handle(host, export,
                                             file_name) if not file_handle else file_handle
         nlm_client = NLMClient(host)
@@ -131,7 +133,7 @@ class NFSClientWrapper(rpyc.Service):
                                                 owner=owner,
                                                 fh=file_handle,
                                                 l_offset=offset,
-                                                l_len=l_len)
+                                                l_len=length)
         status = nlm_client.unlock(unlock_arguments)
         return NLM4_Stats(status).name
 
